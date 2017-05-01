@@ -17,12 +17,6 @@ from Input import *
 import sys
 sys.stdout = sys.stderr
 
-GPUs = [6,7]
-available_devices = os.environ['CUDA_VISIBLE_DEVICES'].split(',')
-os.environ['CUDA_VISIBLE_DEVICES'] = ','.join([available_devices[x] for x in GPUs])
-
-EPOCHS = 10000
-
 FLAGS = tf.app.flags.FLAGS
 
 tf.app.flags.DEFINE_string('train_dir', './train',
@@ -30,15 +24,13 @@ tf.app.flags.DEFINE_string('train_dir', './train',
                            """and checkpoint.""")
 tf.app.flags.DEFINE_integer('max_steps', 1000000,
                             """Number of batches to run.""")
-tf.app.flags.DEFINE_integer('num_gpus', 1,
+tf.app.flags.DEFINE_integer('num_gpus', 2,
                             """How many GPUs to use.""")
 tf.app.flags.DEFINE_boolean('log_device_placement', False,
                             """Whether to log device placement.""")
 
-BATCH_SIZE = FLAGS.batch_size
-
 class Train():
-    def __init__(self, batch_size, epochs, model, TrainingDataFile, TestingDataFile):
+    def __init__(self, batch_size, epochs, model):
         self.TrainingDataFile = TrainingDataFile
         self.TestingDataFile = TestingDataFile
         self.batch_size = batch_size
@@ -57,7 +49,7 @@ class Train():
         images, labels = self.InputData.PipeLine(self.batch_size, self.epochs)
 
         # Build inference Graph.
-        logits = self.model.Inference(images)
+        logits = self.model.inference(images)
 
         # Build the portion of the Graph calculating the losses. Note that we will
         # assemble the total_loss using a custom function below.
@@ -115,8 +107,9 @@ class Train():
         return average_grads
 
     # Training Model on multiple GPU
-    def run(self, continueModel=None):
+    def run_multiGPU(self, continueModel=False):
         with tf.Graph().as_default(), tf.device('/cpu:0'):
+
             global_step = tf.Variable(0, trainable=False, name='global_step')
 
             lr = tf.constant(1e-2)
@@ -127,7 +120,7 @@ class Train():
             with tf.variable_scope(tf.get_variable_scope()):
                 for i in xrange(FLAGS.num_gpus):
                     with tf.device('/gpu:%d' % i):
-                        with tf.name_scope('%s_%d' % (Models.TOWER_NAME, i)) as scope:
+                        with tf.name_scope('%s_%d' % (cifar10.TOWER_NAME, i)) as scope:
                             # Calculate the loss for one tower of the model. This function
                             # constructs the entire model but shares the variables across
                             # all towers.
@@ -160,7 +153,7 @@ class Train():
 
             # Track the moving averages of all trainable variables.
             variable_averages = tf.train.ExponentialMovingAverage(
-                        Models.MOVING_AVERAGE_DECAY, global_step)
+                        cifar10.MOVING_AVERAGE_DECAY, global_step)
             variables_averages_op = variable_averages.apply(tf.trainable_variables())
 
             # Group all updates to into a single train op.
@@ -173,7 +166,8 @@ class Train():
             summary_op = tf.summary.merge(summaries)
 
             # Build an initialization operation to run below.
-            init = tf.group(tf.global_variables_initializer(), tf.initialize_local_variables())
+            init = tf.global_variables_initializer()
+
             # Start running operations on the Graph. allow_soft_placement must be set to
             # True to build towers on GPU, as some of the ops do not have GPU
             # implementations.
@@ -183,7 +177,6 @@ class Train():
             
             # Continue to train from a checkpoint
             if continueModel != None:
-                print "Continue Train with",continueModel
                 saver.restore(sess, continueModel)
 
             sess.run(init)
@@ -193,11 +186,8 @@ class Train():
 
             min_loss = 100
             for step in xrange(FLAGS.max_steps):
-                print step
                 start_time = time.time()
-                print 'A'
                 _, loss_value, v_step = sess.run([train_op, loss, global_step])
-                print 'B'
                 duration = time.time() - start_time
 
                 assert not np.isnan(loss_value), 'Model diverged with loss = NaN'
@@ -224,6 +214,59 @@ class Train():
                         min_loss = loss_value
                         print "Write A CheckPoint at %d" % (v_step)
     
+    def run(self, continueModel=False):
+        with tf.Graph().as_default():
+            global_step = tf.Variable(0, trainable=False, name='global_step')
+            images, labels = self.InputData.PipeLine(self.batch_size, self.epochs)
+            logits = self.model.inference(images)
+            loss = self.model.loss(logits, labels)
+            train_op = self.model.train(loss, global_step)
+            summary = tf.summary.merge_all()
+            init = tf.global_variables_initializer()
+
+            sess = tf.Session(config=tf.ConfigProto(
+                allow_soft_placement=True,
+                log_device_placement=FLAGS.log_device_placement))
+            
+            # Continue to train from a checkpoint
+            if continueModel != None:
+                saver.restore(sess, continueModel)
+
+            sess.run(init)
+            # Start the queue runners.
+            tf.train.start_queue_runners(sess=sess)
+            summary_writer = tf.summary.FileWriter(FLAGS.train_dir, sess.graph)
+
+            min_loss = 100
+            for step in xrange(FLAGS.max_steps):
+                start_time = time.time()
+                _, loss_value, v_step = sess.run([train_op, loss, global_step])
+                duration = time.time() - start_time
+
+                assert not np.isnan(loss_value), 'Model diverged with loss = NaN'
+
+                if v_step % 10 == 0:
+                    num_examples_per_step = FLAGS.batch_size
+                    examples_per_sec = num_examples_per_step / duration
+                    sec_per_batch = duration / FLAGS.num_gpus
+                    format_str = ('%s: step %d, loss = %.2f (%.1f examples/sec; %.3f '
+                      'sec/batch)')
+                    print (format_str % (datetime.now(), v_step, loss_value,
+                             examples_per_sec, sec_per_batch))
+                
+                if v_step % 100 == 0:
+                    summary_str = sess.run(summary_op)
+                    summary_writer.add_summary(summary_str, v_step)
+
+                # Save the model checkpoint periodically.
+                if v_step % 1000 == 0 or (v_step + 1) == FLAGS.max_steps:
+                    #self.EvalWhileTraining()
+                    if loss_value < min_loss:
+                        checkpoint_path = os.path.join(FLAGS.train_dir, 'model.ckpt')
+                        saver.save(sess, checkpoint_path, global_step=v_step)
+                        min_loss = loss_value
+                        print "Write A CheckPoint at %d" % (v_step)
+
     def getCheckPoint(self):
         ckptfile = FLAGS.checkpoint_dir + '/log/checkpoint'
         f = open(ckptfile, 'rb')
@@ -251,10 +294,7 @@ def GetOptions():
 
 def main(argv=None):  # pylint: disable=unused-argument
     Continue = GetOptions()
-    TrainingDataFile = '/home/yufengshen/IGViewer/Data/TrainingData.txt'
-    TestingDataFile = '/home/yufengshen/IGViewer/Data/TestingData.txt'
-    model = Models.ConvNets()
-    train = Train(BATCH_SIZE, EPOCHS, model, TrainingDataFile, TestingDataFile)
+    train = Train(batch_size, epochs, model)
     print 'TraingDir is:', FLAGS.train_dir
     print 'TraingDir is:', FLAGS.train_dir
     if Continue:
