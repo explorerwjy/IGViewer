@@ -17,6 +17,9 @@ from Input import *
 import sys
 sys.stdout = sys.stderr
 
+available_devices = os.environ['CUDA_VISIBLE_DEVICES'].split(',')
+os.environ['CUDA_VISIBLE_DEVICES'] = available_devices[gpu]
+
 FLAGS = tf.app.flags.FLAGS
 
 tf.app.flags.DEFINE_string('train_dir', './train',
