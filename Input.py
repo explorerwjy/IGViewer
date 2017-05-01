@@ -6,8 +6,8 @@
 #=========================================================================
 
 from optparse import OptionParser
+import re
 import os
-import Region
 import time
 import gzip
 import numpy as np
@@ -24,10 +24,10 @@ NUM_EXAMPLES_PER_EPOCH_FOR_EVAL = 100
 FLAGS = tf.app.flags.FLAGS
 
 # Basic model parameters.
-tf.app.flags.DEFINE_integer('batch_size', 128,
+tf.app.flags.DEFINE_integer('batch_size', 32,
                             """Number of images to process in a batch.""")
-tf.app.flags.DEFINE_string('data_dir', './Data,'
-                           """Path to the CIFAR-10 data directory.""")
+tf.app.flags.DEFINE_string('data_dir', './Data',
+                           """Path to the data directory.""")
 tf.app.flags.DEFINE_boolean('use_fp16', False,
                             """Train the model using fp16.""")
 
@@ -36,15 +36,15 @@ class INPUT:
         self.TrainingDataFile = TrainingDataFile
         self.TestingDataFile = TestingDataFile
 
-    def PipeLine(self, num_epochs, batch_size):
+    def PipeLine(self, batch_size, num_epochs):
         image_list, label_list = self.read_labeled_image_list()
-        images = ops.convert_to_tensor(image_list, dtype=tf.string)
-        labels = ops.convert_to_tensor(label_list, dtype=tf.int32)
+        images = tf.convert_to_tensor(image_list, dtype=tf.string)
+        labels = tf.convert_to_tensor(label_list, dtype=tf.int32)
         # Makes an input queue
         input_queue = tf.train.slice_input_producer([images, labels],
-                                            num_epochs=num_epochs,
+                                            #num_epochs=num_epochs,
                                             shuffle=True, name="TrainingDataQueue")
-        image, label = read_images_from_disk(input_queue)
+        image, label = self.read_images_from_disk(input_queue)
         # Optional Preprocessing or Data Augmentation
         # tf.image implements most of the standard image augmentation
         image = self.preprocess_image(image)
@@ -70,10 +70,12 @@ class INPUT:
         filenames, labels = [], []
         if Limit != None:
             count = 0
+        fin.readline()
         for l in fin:
             if Limit != None and count >= Limit:
                 break
             filename, label = l.strip().split('\t')
+            print filename, label
             filenames.append(filename)
             labels.append(int(label)) 
             if Limit != None:
@@ -92,14 +94,14 @@ class INPUT:
         example = tf.image.decode_png(file_contents, channels=DEPTH)
         return example, label
 
-    def preprocess_image(image):
-        resized_image = tf.image.resize_image_with_crop_or_pad(reshaped_image,
+    def preprocess_image(self, image):
+        resized_image = tf.image.resize_image_with_crop_or_pad(image,
                                                          HEIGHT, WIDTH)
         float_image = tf.image.per_image_standardization(resized_image)
         float_image.set_shape([HEIGHT, WIDTH, DEPTH])
-        return image
-    def preprocess_label(label):
-        label.set_shape([1])
+        return float_image 
+    def preprocess_label(self, label):
+        #label.set_shape([1])
         return label
 
 def main():

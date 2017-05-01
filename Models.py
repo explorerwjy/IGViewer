@@ -11,7 +11,8 @@ import tensorflow as tf
 import re
 from Input import *
 
-# This Class is not in used now
+TOWER_NAME = 'tower'
+MOVING_AVERAGE_DECAY = 0.9999
 
 
 class ConvNets():
@@ -20,7 +21,7 @@ class ConvNets():
 
     def Inference(self, RawTensor):
         print RawTensor
-        InputTensor = tf.reshape(RawTensor, [-1, WIDTH, HEIGHT + 1, 3])
+        InputTensor = tf.reshape(RawTensor, [-1, WIDTH, HEIGHT, 3])
         print InputTensor
         # ==========================================================================================
         # conv1 3-64
@@ -92,7 +93,7 @@ class ConvNets():
         # ==========================================================================================
         # ==========================================================================================
         # MaxPooling
-        pool3 = tf.nn.max_pool(conv4, ksize=[1,2,2,1], strides=[1,2,2,1], padding='SAME', name='pool3')
+        pool3 = tf.nn.max_pool(conv6, ksize=[1,2,2,1], strides=[1,2,2,1], padding='SAME', name='pool3')
         # ==========================================================================================
         # ==========================================================================================
         # conv9 3-512
@@ -126,7 +127,7 @@ class ConvNets():
         # ==========================================================================================
         # ==========================================================================================
         # MaxPooling
-        pool4 = tf.nn.max_pool(conv8, ksize=[1,2,2,1], strides=[1,2,2,1], padding='SAME', name='pool4')
+        pool4 = tf.nn.max_pool(conv10, ksize=[1,2,2,1], strides=[1,2,2,1], padding='SAME', name='pool4')
         # ==========================================================================================
         # ==========================================================================================
         # conv13 3-512
@@ -160,26 +161,7 @@ class ConvNets():
         # ==========================================================================================
         # ==========================================================================================
         # MaxPooling
-        pool4 = tf.nn.max_pool(conv14, ksize=[1,2,2,1], strides=[1,2,2,1], padding='SAME', name='pool4')
-        # ==========================================================================================
-        # ==========================================================================================
-        # conv13
-        with tf.variable_scope('conv13') as scope:
-            kernel = _variable_with_weight_decay(
-                'weights', shape=[3, 3, 512, 512], stddev=5e-2, wd=0.0)
-            conv = tf.nn.conv2d(
-                pool4, kernel, [
-                    1, 1, 1, 1], padding='SAME')
-            biases = _variable_on_cpu(
-                'biases', [512], tf.constant_initializer(0.0))
-            pre_activation = tf.nn.bias_add(conv, biases)
-            conv13 = tf.nn.relu(pre_activation, name=scope.name)
-            _activation_summary(conv13)
-            print conv13
-        # ==========================================================================================
-        # ==========================================================================================
-        # MaxPooling
-        pool5 = tf.nn.max_pool(conv16, ksize=[1,2,2,1], strides=[1,2,2,1], padding='SAME', name='pool5')
+        pool5 = tf.nn.max_pool(conv14, ksize=[1,2,2,1], strides=[1,2,2,1], padding='SAME', name='pool5')
         # ==========================================================================================
         # ==========================================================================================
         # local1
@@ -638,7 +620,7 @@ class ConvNets():
 
 
 def _variable_on_cpu(name, shape, initializer):
-    dtype = tf.float16 if FLAGS.use_fl16 else tf.float32
+    dtype = tf.float16 if FLAGS.use_fp16 else tf.float32
     var = tf.get_variable(
             name,
             shape,
@@ -648,14 +630,13 @@ def _variable_on_cpu(name, shape, initializer):
 
 
 def _activation_summary(x):
-    TOWER_NAME = 'Tower'
     tensor_name = re.sub('%s_[0-9]/' % TOWER_NAME, '', x.op.name)
     tf.summary.histogram(tensor_name + '/activations', x)
     tf.summary.scalar(tensor_name + '/sparsity', tf.nn.zero_fraction(x))
 
 
 def _variable_with_weight_decay(name, shape, stddev, wd):
-    dtype = tf.float16 if FLAGS.use_fl16 else tf.float32
+    dtype = tf.float16 if FLAGS.use_fp16 else tf.float32
     var = _variable_on_cpu(
         name, shape, tf.truncated_normal_initializer(
             stddev=stddev, dtype=dtype))
