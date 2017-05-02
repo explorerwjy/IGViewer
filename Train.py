@@ -43,7 +43,7 @@ class Train():
         self.TestingDataFile = TestingDataFile
         self.batch_size = batch_size
         self.epochs = epochs
-        self.InputData = INPUT(self.TrainingDataFile, self.TestingDataFile)
+        self.InputData = INPUT(self.TrainingDataFile)
         self.model = model
 
     def tower_loss(self, scope):
@@ -239,9 +239,8 @@ class Train():
             # Continue to train from a checkpoint
             if continueModel != None:
                 saver.restore(sess, continueModel)
-                v_step = sess.run([global_step])
-                print "Restore CheckPoint at step", v_step
-            print sess.run([global_step, loss])
+            v_step = sess.run(global_step)
+            print "Start with step", v_step
             sess.run(init)
             # Start the queue runners.
             tf.train.start_queue_runners(sess=sess)
@@ -271,7 +270,9 @@ class Train():
                         #print labels
                         correct_prediction = tf.equal(tf.argmax(logits,1), tf.argmax(labels, 1))
                         accuracy = tf.reduce_mean(tf.cast(correct_prediction, tf.float32))
+                        _accuracy = session.run([accuracy])
                         tf.summary.scalar("accuracy", accuracy)
+                        print "Accuracy:",_accuracy
                         summary_str = sess.run(summary_op)
                         summary_writer.add_summary(summary_str, v_step)
 
@@ -312,8 +313,6 @@ def main(argv=None):  # pylint: disable=unused-argument
     TrainingDataFile = "/home/yufengshen/IGViewer/Data/TrainingData.txt"
     TestingDataFile = "/home/yufengshen/IGViewer/Data/TrainingData.txt"
     train = Train(BATCH_SIZE, EPOCHS, model, TrainingDataFile, TestingDataFile)
-    print 'TraingDir is:', FLAGS.train_dir
-    print 'TraingDir is:', FLAGS.train_dir
     if Continue:
         ckpt = train.getCheckPoint()
         print "Train From a Check Point:", ckpt

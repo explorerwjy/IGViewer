@@ -18,8 +18,8 @@ HEIGHT = 224
 WIDTH = 224
 DEPTH = 3
 NUM_CLASSES = 2 #(0:Not Variant   1:Inherited Variant)
-NUM_EXAMPLES_PER_EPOCH_FOR_TRAIN = 2000
-NUM_EXAMPLES_PER_EPOCH_FOR_EVAL = 100
+NUM_EXAMPLES_PER_EPOCH_FOR_TRAIN = 580
+NUM_EXAMPLES_PER_EPOCH_FOR_EVAL = 320
 
 FLAGS = tf.app.flags.FLAGS
 
@@ -36,9 +36,8 @@ tf.app.flags.DEFINE_string('TestingDataFile', '/home/yufengshen/IGViewer/Data/Te
                              """Test Data""")
 
 class INPUT:
-    def __init__(self, TrainingDataFile, TestingDataFile):
-        self.TrainingDataFile = TrainingDataFile
-        self.TestingDataFile = TestingDataFile
+    def __init__(self, DataFile):
+        self.DataFile = DataFile
     def PipeLine(self, batch_size, num_epochs):
         image_list, label_list = self.read_labeled_image_list()
         images = tf.convert_to_tensor(image_list, dtype=tf.string)
@@ -46,7 +45,7 @@ class INPUT:
         # Makes an input queue
         input_queue = tf.train.slice_input_producer([images, labels],
                                             #num_epochs=num_epochs,
-                                            shuffle=False, name="TrainingDataQueue")
+                                            shuffle=True, name="TrainingDataQueue")
         image, label = self.read_images_from_disk(input_queue)
         # Optional Preprocessing or Data Augmentation
         # tf.image implements most of the standard image augmentation
@@ -58,7 +57,7 @@ class INPUT:
                                                   batch_size=batch_size)
         return image_batch, label_batch
       
-    def read_labeled_image_list(self, Eval=False, Limit=None):
+    def read_labeled_image_list(self, Limit=None):
         """Reads a .txt file containing pathes and labeles
         Args:
            DataFile: a .txt file with one "/path/to/image\tlabel" per line
@@ -66,10 +65,7 @@ class INPUT:
         Returns:
            List with all filenames in file DataFile
         """
-        if not Eval:
-            fin = open(self.TrainingDataFile, 'rb')
-        else:
-            fin = open(self.TestingDataFile, 'rb')
+        fin = open(self.DataFile, 'rb')
         filenames, labels = [], []
         if Limit != None:
             count = 0

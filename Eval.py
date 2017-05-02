@@ -7,6 +7,11 @@ import tensorflow as tf
 
 import Models
 
+
+GPUs = [5]
+available_devices = os.environ['CUDA_VISIBLE_DEVICES'].split(',')
+os.environ['CUDA_VISIBLE_DEVICES'] = ','.join([ available_devices[x] for x in GPUs])
+
 FLAGS = tf.app.flags.FLAGS
 
 tf.app.flags.DEFINE_string('eval_dir', '/test',
@@ -78,7 +83,7 @@ def eval_once(saver, summary_writer, top_k_op, summary_op):
 
 
 def evaluate():
-    """Eval CIFAR-10 for a number of steps."""
+    Input = INPUT
     with tf.Graph().as_default() as g:
                 # Get images and labels for CIFAR-10.
         eval_data = FLAGS.eval_data == 'test'
