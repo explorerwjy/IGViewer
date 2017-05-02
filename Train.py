@@ -241,6 +241,7 @@ class Train():
                 saver.restore(sess, continueModel)
                 v_step = sess.run([global_step])
                 print "Restore CheckPoint at step", v_step
+            print sess.run([global_step, loss])
             sess.run(init)
             # Start the queue runners.
             tf.train.start_queue_runners(sess=sess)

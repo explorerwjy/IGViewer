@@ -66,7 +66,7 @@ class INPUT:
         Returns:
            List with all filenames in file DataFile
         """
-        if Eval:
+        if not Eval:
             fin = open(self.TrainingDataFile, 'rb')
         else:
             fin = open(self.TestingDataFile, 'rb')
