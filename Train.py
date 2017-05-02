@@ -239,7 +239,8 @@ class Train():
             # Continue to train from a checkpoint
             if continueModel != None:
                 saver.restore(sess, continueModel)
-
+                v_step = sess.run([global_step])
+                print "Restore CheckPoint at step", v_step
             sess.run(init)
             # Start the queue runners.
             tf.train.start_queue_runners(sess=sess)
@@ -288,29 +289,21 @@ class Train():
                 coord.join()
 
     def getCheckPoint(self):
-        ckptfile = FLAGS.checkpoint_dir + '/log/checkpoint'
+        ckptfile = FLAGS.train_dir + '/checkpoint'
         f = open(ckptfile, 'rb')
         ckpt = f.readline().split(':')[1].strip().strip('"')
         f.close()
-        prefix = os.path.abspath(FLAGS.checkpoint_dir + '/log/')
+        prefix = os.path.abspath(FLAGS.train_dir)
         ckpt = prefix + '/' + ckpt
         return ckpt
 
 def GetOptions():
     parser = argparse.ArgumentParser()
     parser.add_argument(
-        "-c",
-        "--Continue",
-        help="continue training from a checkpoint",
-        type=str)
+        "-c", "--Continue", action='store_true', default=False,
+        help="continue training from a checkpoint")
     args = parser.parse_args()
-    if args.Continue is not None:
-        if args.Continue.lower() in ['y', 'yes', 't', 'true']:
-            return True
-        else:
-            return False
-    else:
-        return False
+    return args.Continue
 
 def main(argv=None):  # pylint: disable=unused-argument
     Continue = GetOptions()
@@ -322,6 +315,7 @@ def main(argv=None):  # pylint: disable=unused-argument
     print 'TraingDir is:', FLAGS.train_dir
     if Continue:
         ckpt = train.getCheckPoint()
+        print "Train From a Check Point:", ckpt
         train.run(continueModel=ckpt)
     else:
         train.run()
