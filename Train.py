@@ -17,6 +17,12 @@ from Input import *
 import sys
 sys.stdout = sys.stderr
 
+GPUs = [6,7]
+available_devices = os.environ['CUDA_VISIBLE_DEVICES'].split(',')
+os.environ['CUDA_VISIBLE_DEVICES'] = ','.join([ available_devices[x] for x in GPUs])
+
+EPOCHS = 1000000
+
 FLAGS = tf.app.flags.FLAGS
 
 tf.app.flags.DEFINE_string('train_dir', './train',
@@ -29,8 +35,10 @@ tf.app.flags.DEFINE_integer('num_gpus', 2,
 tf.app.flags.DEFINE_boolean('log_device_placement', False,
                             """Whether to log device placement.""")
 
+BATCH_SIZE = FLAGS.batch_size
+
 class Train():
-    def __init__(self, batch_size, epochs, model):
+    def __init__(self, batch_size, epochs, model, TrainingDataFile, TestingDataFile):
         self.TrainingDataFile = TrainingDataFile
         self.TestingDataFile = TestingDataFile
         self.batch_size = batch_size
@@ -214,16 +222,16 @@ class Train():
                         min_loss = loss_value
                         print "Write A CheckPoint at %d" % (v_step)
     
-    def run(self, continueModel=False):
+    def run(self, continueModel=None):
         with tf.Graph().as_default():
             global_step = tf.Variable(0, trainable=False, name='global_step')
             images, labels = self.InputData.PipeLine(self.batch_size, self.epochs)
-            logits = self.model.inference(images)
+            logits = self.model.Inference(images)
             loss = self.model.loss(logits, labels)
             train_op = self.model.train(loss, global_step)
-            summary = tf.summary.merge_all()
+            summary_op = tf.summary.merge_all()
             init = tf.global_variables_initializer()
-
+            saver = tf.train.Saver()
             sess = tf.Session(config=tf.ConfigProto(
                 allow_soft_placement=True,
                 log_device_placement=FLAGS.log_device_placement))
@@ -236,36 +244,48 @@ class Train():
             # Start the queue runners.
             tf.train.start_queue_runners(sess=sess)
             summary_writer = tf.summary.FileWriter(FLAGS.train_dir, sess.graph)
+            coord = tf.train.Coordinator()
+            min_loss = 500
+            try:    
+                for step in xrange(FLAGS.max_steps):
+                    if coord.should_stop():
+                        break
+                    start_time = time.time()
+                    _, loss_value, v_step = sess.run([train_op, loss, global_step])
+                    duration = time.time() - start_time
 
-            min_loss = 100
-            for step in xrange(FLAGS.max_steps):
-                start_time = time.time()
-                _, loss_value, v_step = sess.run([train_op, loss, global_step])
-                duration = time.time() - start_time
+                    assert not np.isnan(loss_value), 'Model diverged with loss = NaN'
 
-                assert not np.isnan(loss_value), 'Model diverged with loss = NaN'
+                    if v_step % 10 == 0:
+                        num_examples_per_step = FLAGS.batch_size
+                        examples_per_sec = num_examples_per_step / duration
+                        sec_per_batch = duration / FLAGS.num_gpus
+                        format_str = ('%s: step %d, loss = %.2f (%.1f examples/sec; %.3f '
+                          'sec/batch)')
+                        print (format_str % (datetime.now(), v_step, loss_value,
+                                 examples_per_sec, sec_per_batch))
+                    
+                    if v_step % 100 == 0:
+                        #print labels
+                        correct_prediction = tf.equal(tf.argmax(logits,1), tf.argmax(labels, 1))
+                        accuracy = tf.reduce_mean(tf.cast(correct_prediction, tf.float32))
+                        tf.summary.scalar("accuracy", accuracy)
+                        summary_str = sess.run(summary_op)
+                        summary_writer.add_summary(summary_str, v_step)
 
-                if v_step % 10 == 0:
-                    num_examples_per_step = FLAGS.batch_size
-                    examples_per_sec = num_examples_per_step / duration
-                    sec_per_batch = duration / FLAGS.num_gpus
-                    format_str = ('%s: step %d, loss = %.2f (%.1f examples/sec; %.3f '
-                      'sec/batch)')
-                    print (format_str % (datetime.now(), v_step, loss_value,
-                             examples_per_sec, sec_per_batch))
-                
-                if v_step % 100 == 0:
-                    summary_str = sess.run(summary_op)
-                    summary_writer.add_summary(summary_str, v_step)
-
-                # Save the model checkpoint periodically.
-                if v_step % 1000 == 0 or (v_step + 1) == FLAGS.max_steps:
-                    #self.EvalWhileTraining()
-                    if loss_value < min_loss:
-                        checkpoint_path = os.path.join(FLAGS.train_dir, 'model.ckpt')
-                        saver.save(sess, checkpoint_path, global_step=v_step)
-                        min_loss = loss_value
-                        print "Write A CheckPoint at %d" % (v_step)
+                    # Save the model checkpoint periodically.
+                    if v_step % 1000 == 0 or (v_step + 1) == FLAGS.max_steps:
+                        #self.EvalWhileTraining()
+                        if loss_value < min_loss:
+                            checkpoint_path = os.path.join(FLAGS.train_dir, 'model.ckpt')
+                            saver.save(sess, checkpoint_path, global_step=v_step)
+                            min_loss = loss_value
+                            print "Write A CheckPoint at %d" % (v_step)
+            except Exception, e:
+                coord.request_stop(e)
+            finally:
+                coord.request_stop()
+                coord.join()
 
     def getCheckPoint(self):
         ckptfile = FLAGS.checkpoint_dir + '/log/checkpoint'
@@ -294,7 +314,10 @@ def GetOptions():
 
 def main(argv=None):  # pylint: disable=unused-argument
     Continue = GetOptions()
-    train = Train(batch_size, epochs, model)
+    model = Models.ConvNets()
+    TrainingDataFile = "/home/yufengshen/IGViewer/Data/TrainingData.txt"
+    TestingDataFile = "/home/yufengshen/IGViewer/Data/TrainingData.txt"
+    train = Train(BATCH_SIZE, EPOCHS, model, TrainingDataFile, TestingDataFile)
     print 'TraingDir is:', FLAGS.train_dir
     print 'TraingDir is:', FLAGS.train_dir
     if Continue:
