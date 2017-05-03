@@ -27,6 +27,7 @@ tf.app.flags.DEFINE_integer('num_examples', 320,
 tf.app.flags.DEFINE_boolean('run_once', False,
                             """Whether to run eval only once.""")
 
+EPOCHS = 1000000
 
 def eval_once(saver, summary_writer, labels, logits, top_k_op, summary_op):
     """Run Eval once.
@@ -86,7 +87,7 @@ def eval_once(saver, summary_writer, labels, logits, top_k_op, summary_op):
         coord.join(threads, stop_grace_period_secs=10)
 
 
-def evaluate(DataFile):
+def evaluate_2(DataFile):
     InputData = INPUT(DataFile)
     with tf.Graph().as_default() as g:
                 # Get images and labels for CIFAR-10.
@@ -118,6 +119,75 @@ def evaluate(DataFile):
                 break
             time.sleep(FLAGS.eval_interval_secs)
 
+class Evaluate():
+    def __init__(self, batch_size, epochs, model, DataFile):
+        self.batch_size = batch_size
+        self.epochs = epochs
+        self.InputData = INPUT(self.DataFile)
+        self.model = model
+
+    def run(self):
+        with tf.Graph().as_default():
+            global_step = tf.Variable(0, trainable=False, name='global_step')
+            images, labels = self.InputData.PipeLine(self.batch_size, self.epochs)
+            logits = self.model.Inference(images)
+            loss = self.model.loss(logits, labels)
+            top_k_op = tf.nn.in_top_k(logits, labels, 1)
+            summary_op = tf.summary.merge_all()
+            init = tf.global_variables_initializer()
+            saver = tf.train.Saver()
+            sess = tf.Session(config=tf.ConfigProto(
+                allow_soft_placement=True,
+                log_device_placement=FLAGS.log_device_placement))
+            
+            saver.restore(sess, self.getCheckPoint)
+            v_step = sess.run(global_step)
+            print sess.run(global_step)
+            print "Start with step", v_step
+            sess.run(init)
+            # Start the queue runners.
+            tf.train.start_queue_runners(sess=sess)
+            summary_writer = tf.summary.FileWriter(FLAGS.train_dir, sess.graph)
+            coord = tf.train.Coordinator()
+            try:    
+                num_iter = int(math.ceil(FLAGS.num_examples / FLAGS.batch_size))
+                true_count = 0  # Counts the number of correct predictions.
+                total_sample_count = num_iter * FLAGS.batch_size
+                step = 0
+                print ckpt.model_checkpoint_path
+                saver.restore(sess, self.getCheckPoint)
+                print "CKPT starts with step",(sess.run(global_step))
+                while step < num_iter and not coord.should_stop():
+                    print (sess.run(global_step))
+                    predictions = sess.run([top_k_op])
+                    true_count += np.sum(predictions)
+                    step += 1
+
+                # Compute precision @ 1.
+                print "Predicted Right:{}\t\tTotal:{}".format(true_count, total_sample_count)
+                precision = float(true_count) / total_sample_count
+                print('%s: precision @ 1 = %.3f' % (datetime.now(), precision))
+
+                summary = tf.Summary()
+                summary.ParseFromString(sess.run(summary_op))
+                summary.value.add(tag='Precision @ 1', simple_value=precision)
+                summary_writer.add_summary(summary, step)
+            except Exception, e:
+                coord.request_stop(e)
+            finally:
+                coord.request_stop()
+                coord.join()
+
+    def getCheckPoint(self):
+        ckptfile = FLAGS.checkpoint_dir + '/checkpoint'
+        f = open(ckptfile, 'rb')
+        ckpt = f.readline().split(':')[1].strip().strip('"')
+        f.close()
+        prefix = os.path.abspath(FLAGS.train_dir)
+        ckpt = prefix + '/' + ckpt
+        return ckpt
+
+
 
 def main(argv=None):  # pylint: disable=unused-argument
     if tf.gfile.Exists(FLAGS.eval_dir):
@@ -125,8 +195,9 @@ def main(argv=None):  # pylint: disable=unused-argument
     tf.gfile.MakeDirs(FLAGS.eval_dir)
     TrainingDataFile = "/home/yufengshen/IGViewer/Data/TrainingData.txt"
     TestingDataFile = "/home/yufengshen/IGViewer/Data/TrainingData.txt"
-    #evaluate(TestingDataFile)
-    evaluate(TrainingDataFile)
+    model = Models.ConvNets()
+    evaluate = Evaluate(FLAGS.batch_size, EPOCHS, model, TrainingDataFile)
+    evaluate.run()
 
 
 if __name__ == '__main__':
