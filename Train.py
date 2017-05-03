@@ -17,7 +17,7 @@ from Input import *
 import sys
 sys.stdout = sys.stderr
 
-GPUs = [6,7]
+GPUs = [0,1]
 available_devices = os.environ['CUDA_VISIBLE_DEVICES'].split(',')
 os.environ['CUDA_VISIBLE_DEVICES'] = ','.join([ available_devices[x] for x in GPUs])
 
@@ -25,7 +25,7 @@ EPOCHS = 1000000
 
 FLAGS = tf.app.flags.FLAGS
 
-tf.app.flags.DEFINE_string('train_dir', './train',
+tf.app.flags.DEFINE_string('train_dir', './train_3',
                            """Directory where to write event logs """
                            """and checkpoint.""")
 tf.app.flags.DEFINE_integer('max_steps', 1000000,
@@ -240,6 +240,7 @@ class Train():
             if continueModel != None:
                 saver.restore(sess, continueModel)
             v_step = sess.run(global_step)
+            print sess.run(global_step)
             print "Start with step", v_step
             sess.run(init)
             # Start the queue runners.
@@ -248,7 +249,10 @@ class Train():
             coord = tf.train.Coordinator()
             min_loss = 500
             try:    
+                
+                saver.restore(sess, continueModel)
                 for step in xrange(FLAGS.max_steps):
+                    print 'GlobalStep',sess.run(global_step)
                     if coord.should_stop():
                         break
                     start_time = time.time()
@@ -267,12 +271,6 @@ class Train():
                                  examples_per_sec, sec_per_batch))
                     
                     if v_step % 100 == 0:
-                        #print labels
-                        correct_prediction = tf.equal(tf.argmax(logits,1), tf.argmax(labels, 1))
-                        accuracy = tf.reduce_mean(tf.cast(correct_prediction, tf.float32))
-                        _accuracy = session.run([accuracy])
-                        tf.summary.scalar("accuracy", accuracy)
-                        print "Accuracy:",_accuracy
                         summary_str = sess.run(summary_op)
                         summary_writer.add_summary(summary_str, v_step)
 

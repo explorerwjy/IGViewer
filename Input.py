@@ -20,7 +20,7 @@ DEPTH = 3
 NUM_CLASSES = 2 #(0:Not Variant   1:Inherited Variant)
 NUM_EXAMPLES_PER_EPOCH_FOR_TRAIN = 580
 NUM_EXAMPLES_PER_EPOCH_FOR_EVAL = 320
-
+MOVING_AVERAGE_DECAY = 0.9999
 FLAGS = tf.app.flags.FLAGS
 
 # Basic model parameters.
@@ -38,7 +38,7 @@ tf.app.flags.DEFINE_string('TestingDataFile', '/home/yufengshen/IGViewer/Data/Te
 class INPUT:
     def __init__(self, DataFile):
         self.DataFile = DataFile
-    def PipeLine(self, batch_size, num_epochs):
+    def PipeLine(self, batch_size, num_epochs=None):
         image_list, label_list = self.read_labeled_image_list()
         images = tf.convert_to_tensor(image_list, dtype=tf.string)
         labels = tf.convert_to_tensor(label_list, dtype=tf.int32)
