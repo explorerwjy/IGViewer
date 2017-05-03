@@ -22,8 +22,8 @@ tf.app.flags.DEFINE_string('eval_data', 'test',
                            """Either 'test' or 'train_eval'.""")
 tf.app.flags.DEFINE_string('checkpoint_dir', './train_3',
                            """Directory where to read model checkpoints.""")
-tf.app.flags.DEFINE_integer('num_examples', 5543,
-                            """Number of examples to run.""")
+#tf.app.flags.DEFINE_integer('num_examples', 320,"""Number of examples to run.""")
+tf.app.flags.DEFINE_integer('num_examples', 5543,"""Number of examples to run.""")
 tf.app.flags.DEFINE_boolean('run_once', False,
                             """Whether to run eval only once.""")
 
@@ -33,34 +33,36 @@ class INPUTPIPE:
     def __init__(self, DataFile):
         self.DataFile = DataFile
     def PipeLine(self, batch_size, num_epochs=None):
-        image_list = self.read_image_with_fname_list()
+        image_list, fname_list = self.read_image_with_fname_list()
         images = tf.convert_to_tensor(image_list, dtype=tf.string)
-        input_queue = tf.train.slice_input_producer(images,
-                                            #num_epochs=num_epochs,
-                                            shuffle=False, name="PredictionQueue")
-        fname, image = self.read_images_from_disk(input_queue)
+        fname_list = tf.convert_to_tensor(fname_list, dtype=tf.string)
+        input_queue = tf.train.slice_input_producer([images, fname_list],shuffle=False, name="DataQueue")
+        image, fname = self.read_images_from_disk(input_queue)
         image = self.preprocess_image(image)
-        image_batch = tf.train.batch([fname, image],batch_size=batch_size)
+        image_batch = tf.train.batch([image, fname],batch_size=batch_size)
         return image_batch
 
     def read_image_with_fname_list(self, Limit=None):
         fin = open(self.DataFile, 'rb')
+        images = []
         filenames = []
         if Limit != None:
             count = 0
         for l in fin:
             if Limit != None and count >= Limit:
                 break
-            filename = l.strip().split('\t')
-            filenames.append(filename)
+            image = l.strip().split('\t')[0]
+            fname = image.split('/')[-1]
+            images.append(image)
+            filenames.append(fname)
             if Limit != None:
                 count += 1
-        return filenames
+        return images, filenames
 
     def read_images_from_disk(self, input_queue):
-        file_contents = tf.read_file(input_queue)
+        file_contents = tf.read_file(input_queue[0])
         example = tf.image.decode_image(file_contents, channels=DEPTH)
-        return input_queue, example
+        return example, input_queue[1]
 
     def preprocess_image(self, image):
         resized_image = tf.image.resize_image_with_crop_or_pad(image,
@@ -68,7 +70,6 @@ class INPUTPIPE:
         float_image = tf.image.per_image_standardization(resized_image)
         float_image.set_shape([HEIGHT, WIDTH, DEPTH])
         return float_image
-
 
 class Predict():
     def __init__(self, batch_size, epochs, model, DataFile):
@@ -80,12 +81,13 @@ class Predict():
         self.InputData = INPUTPIPE(DataFile)
         self.model = model
         self.fout = open('Predicted.txt','wb')
-        self.fout.write('FileName\tPrediction\tProbability\n')
+        self.fout.write('FileName\tProbabilit\tPrediction\n')
 
     def run(self):
+        print 'Run'
         with tf.Graph().as_default():
             global_step = tf.Variable(0, trainable=False, name='global_step')
-            fnames, images = self.InputData.PipeLine(self.batch_size, self.epochs)
+            images, fnames = self.InputData.PipeLine(self.batch_size, self.epochs)
             logits = self.model.Inference(images)
             normed_logits = tf.nn.softmax(logits, dim=-1, name=None)
             
@@ -110,10 +112,15 @@ class Predict():
                 saver.restore(sess, self.getCheckPoint())
                 print "CKPT starts with step",(sess.run(global_step))
                 while step < num_iter and not coord.should_stop():
+                    start_time = time.time()
                     _fnames, _logits, _predictions = sess.run([fnames, normed_logits, predict])
                     for _fname, _logit, _predict in zip(_fnames, _logits, _predictions):
-                        print _fname, _logit, _predict
-                        #self.fout.write('{}\t{}\t{}\n'.format(_fname, _predict, _logit))
+                        #print _fname, _logit, _predict
+                        score = self.makeScore(_logit)
+                        _predict = self.makeLabel(_predict)
+                        self.fout.write('{}\t{}\t{}\n'.format(_fname, score, _predict))
+                        duration = time.time() - start_time
+                        print "Predict One batch %d used %fs"%(self.batch_size, duration)
                     step += 1
             except Exception, e:
                 coord.request_stop(e)
@@ -121,7 +128,18 @@ class Predict():
                 self.fout.close()
                 coord.request_stop()
                 coord.join()
-
+    
+    def makeScore(self, _logit):
+        res = []
+        for item in _logit:
+            tmp = round(item, 3)
+            res.append(str(tmp))
+        return ','.join(res)
+    def makeLabel(self, _predict):
+        if _predict == 0:
+            return 'F'
+        else:
+            return 'T'
     def getCheckPoint(self):
         ckptfile = FLAGS.checkpoint_dir + '/checkpoint'
         f = open(ckptfile, 'rb')
@@ -131,13 +149,15 @@ class Predict():
         ckpt = prefix + '/' + ckpt
         return ckpt
 
-
-
 def main(argv=None):  # pylint: disable=unused-argument
     if tf.gfile.Exists(FLAGS.eval_dir):
         tf.gfile.DeleteRecursively(FLAGS.eval_dir)
     tf.gfile.MakeDirs(FLAGS.eval_dir)
     DataFile = FLAGS.DataFile
+    print DataFile
     model = Models.ConvNets()
     evaluate = Predict(FLAGS.batch_size, EPOCHS, model, DataFile)
     evaluate.run()
+
+if __name__ == '__main__':
+    tf.app.run()
