@@ -590,7 +590,7 @@ class ConvNets():
         return loss_averages_op
 
     def train(self, total_loss, global_step):
-        lr = tf.constant(1e-2)
+        lr = tf.constant(1e-3)
         tf.summary.scalar('learning_rate', lr)
         loss_averages_op = self.add_loss_summaries(total_loss)
 

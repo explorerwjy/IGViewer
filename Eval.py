@@ -18,11 +18,11 @@ tf.app.flags.DEFINE_string('eval_dir', './test',
                            """Directory where to write event logs.""")
 tf.app.flags.DEFINE_string('eval_data', 'test',
                            """Either 'test' or 'train_eval'.""")
-tf.app.flags.DEFINE_string('checkpoint_dir', './train',
+tf.app.flags.DEFINE_string('checkpoint_dir', './train_3',
                            """Directory where to read model checkpoints.""")
 tf.app.flags.DEFINE_integer('eval_interval_secs', 60,
                             """How often to run the eval.""")
-tf.app.flags.DEFINE_integer('num_examples', 320,
+tf.app.flags.DEFINE_integer('num_examples', 643,
                             """Number of examples to run.""")
 tf.app.flags.DEFINE_boolean('run_once', False,
                             """Whether to run eval only once.""")
@@ -123,7 +123,10 @@ class Evaluate():
     def __init__(self, batch_size, epochs, model, DataFile):
         self.batch_size = batch_size
         self.epochs = epochs
-        self.InputData = INPUT(self.DataFile)
+        print "=" * 50
+        print "InputData is:", DataFile
+        print "=" * 50
+        self.InputData = INPUT(DataFile)
         self.model = model
 
     def run(self):
@@ -131,35 +134,39 @@ class Evaluate():
             global_step = tf.Variable(0, trainable=False, name='global_step')
             images, labels = self.InputData.PipeLine(self.batch_size, self.epochs)
             logits = self.model.Inference(images)
+            normed_logits = tf.nn.softmax(logits, dim=-1, name=None)
             loss = self.model.loss(logits, labels)
-            top_k_op = tf.nn.in_top_k(logits, labels, 1)
+            #predict = tf.argmax(normed_logits, 1)
+            predict = tf.nn.in_top_k(normed_logits, labels, 1)
+            #top_k_op = tf.nn.in_top_k(logits, labels, 1)
             summary_op = tf.summary.merge_all()
             init = tf.global_variables_initializer()
             saver = tf.train.Saver()
-            sess = tf.Session(config=tf.ConfigProto(
-                allow_soft_placement=True,
-                log_device_placement=FLAGS.log_device_placement))
+            sess = tf.Session()
             
-            saver.restore(sess, self.getCheckPoint)
-            v_step = sess.run(global_step)
-            print sess.run(global_step)
-            print "Start with step", v_step
+            #saver.restore(sess, self.getCheckPoint())
+            #v_step = sess.run(global_step)
+            #print sess.run(global_step)
+            #print "Start with step", v_step
             sess.run(init)
             # Start the queue runners.
             tf.train.start_queue_runners(sess=sess)
-            summary_writer = tf.summary.FileWriter(FLAGS.train_dir, sess.graph)
+            summary_writer = tf.summary.FileWriter(FLAGS.eval_dir, sess.graph)
             coord = tf.train.Coordinator()
             try:    
                 num_iter = int(math.ceil(FLAGS.num_examples / FLAGS.batch_size))
                 true_count = 0  # Counts the number of correct predictions.
                 total_sample_count = num_iter * FLAGS.batch_size
                 step = 0
-                print ckpt.model_checkpoint_path
-                saver.restore(sess, self.getCheckPoint)
+                print self.getCheckPoint()
+                saver.restore(sess, self.getCheckPoint())
                 print "CKPT starts with step",(sess.run(global_step))
                 while step < num_iter and not coord.should_stop():
-                    print (sess.run(global_step))
-                    predictions = sess.run([top_k_op])
+                    _labels, _logits, _loss, predictions = sess.run([labels, normed_logits, loss, predict])
+                    #print "labels:",_labels
+                    #print "logits:",_logits
+                    #print "predict", predictions
+                    #print "loss:",_loss
                     true_count += np.sum(predictions)
                     step += 1
 
@@ -183,7 +190,7 @@ class Evaluate():
         f = open(ckptfile, 'rb')
         ckpt = f.readline().split(':')[1].strip().strip('"')
         f.close()
-        prefix = os.path.abspath(FLAGS.train_dir)
+        prefix = os.path.abspath(FLAGS.checkpoint_dir)
         ckpt = prefix + '/' + ckpt
         return ckpt
 
@@ -194,9 +201,10 @@ def main(argv=None):  # pylint: disable=unused-argument
         tf.gfile.DeleteRecursively(FLAGS.eval_dir)
     tf.gfile.MakeDirs(FLAGS.eval_dir)
     TrainingDataFile = "/home/yufengshen/IGViewer/Data/TrainingData.txt"
-    TestingDataFile = "/home/yufengshen/IGViewer/Data/TrainingData.txt"
+    TestingDataFile = "/home/yufengshen/IGViewer/Data/TestingData.txt"
     model = Models.ConvNets()
-    evaluate = Evaluate(FLAGS.batch_size, EPOCHS, model, TrainingDataFile)
+    #evaluate = Evaluate(FLAGS.batch_size, EPOCHS, model, TrainingDataFile)
+    evaluate = Evaluate(FLAGS.batch_size, EPOCHS, model, TestingDataFile)
     evaluate.run()
 
 

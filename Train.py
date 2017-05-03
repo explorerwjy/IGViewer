@@ -229,6 +229,7 @@ class Train():
             logits = self.model.Inference(images)
             loss = self.model.loss(logits, labels)
             train_op = self.model.train(loss, global_step)
+            top_k_op = tf.nn.in_top_k(logits, labels, 1)
             summary_op = tf.summary.merge_all()
             init = tf.global_variables_initializer()
             saver = tf.train.Saver()
@@ -237,11 +238,6 @@ class Train():
                 log_device_placement=FLAGS.log_device_placement))
             
             # Continue to train from a checkpoint
-            if continueModel != None:
-                saver.restore(sess, continueModel)
-            v_step = sess.run(global_step)
-            print sess.run(global_step)
-            print "Start with step", v_step
             sess.run(init)
             # Start the queue runners.
             tf.train.start_queue_runners(sess=sess)
@@ -250,9 +246,11 @@ class Train():
             min_loss = 500
             try:    
                 
-                saver.restore(sess, continueModel)
+                if continueModel != None:
+                    saver.restore(sess, continueModel)
+                    print sess.run(global_step)
+                    print "Start with step", v_step
                 for step in xrange(FLAGS.max_steps):
-                    print 'GlobalStep',sess.run(global_step)
                     if coord.should_stop():
                         break
                     start_time = time.time()
@@ -271,6 +269,8 @@ class Train():
                                  examples_per_sec, sec_per_batch))
                     
                     if v_step % 100 == 0:
+                        prediction = float((np.sum(sess.run(top_k_op))))
+                        print '{} in {} Correct, Batch precision @ 1 ={}'.format(prediction, self.batch_size, prediction/self.batch_size)
                         summary_str = sess.run(summary_op)
                         summary_writer.add_summary(summary_str, v_step)
 
