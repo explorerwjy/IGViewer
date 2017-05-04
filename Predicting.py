@@ -16,6 +16,8 @@ FLAGS = tf.app.flags.FLAGS
 
 tf.app.flags.DEFINE_string('DataFile', '/home/yufengshen/IGViewer/Predict/ToPredict_0503.txt',
                            """Data File to Predict.""")
+tf.app.flags.DEFINE_string('OutName', 'Predicted.txt',
+                           """Data File to Predict.""")
 tf.app.flags.DEFINE_string('eval_dir', './test',
                            """Directory where to write event logs.""")
 tf.app.flags.DEFINE_string('eval_data', 'test',
@@ -28,6 +30,7 @@ tf.app.flags.DEFINE_boolean('run_once', False,
                             """Whether to run eval only once.""")
 
 EPOCHS = 1000000
+
 
 class INPUTPIPE:
     def __init__(self, DataFile):
@@ -75,12 +78,16 @@ class Predict():
     def __init__(self, batch_size, epochs, model, DataFile):
         self.batch_size = batch_size
         self.epochs = epochs
+        fin = open(DataFile,'rb')
+        FLAGS.num_examples = len(fin.readlines())
+        fin.close()
         print "=" * 50
         print "InputData is:", DataFile
+        print "Num Examples is:", FLAGS.num_examples
         print "=" * 50
         self.InputData = INPUTPIPE(DataFile)
         self.model = model
-        self.fout = open('Predicted.txt','wb')
+        self.fout = open(FLAGS.OutName,'wb')
         self.fout.write('FileName\tProbabilit\tPrediction\n')
 
     def run(self):
